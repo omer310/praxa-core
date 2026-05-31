@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "praxa_core"
+version = "0.1.0"
+description = "Shared tool core, context, actions, and memory for Praxa agents (voice, SMS, background)."
+requires-python = ">=3.10"
+dependencies = [
+    "httpx",
+    "python-dateutil",
+]
+
+[project.optional-dependencies]
+supabase = ["supabase"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["praxa_core*"]
