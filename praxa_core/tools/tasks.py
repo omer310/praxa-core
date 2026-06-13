@@ -360,7 +360,7 @@ async def update_loop_impl(
     task_title: str,
     status: str | None = None,
     description: str | None = None,
-    is_this_week: bool | None = None,
+    view_tab: str | None = None,
     estimated_duration_minutes: int | None = None,
 ) -> str:
     if not ctx.uid:
@@ -376,9 +376,9 @@ async def update_loop_impl(
         if description is not None:
             updates["description"] = description
             changes.append("description updated")
-        if is_this_week is not None:
-            updates["is_this_week"] = is_this_week
-            changes.append("added to this week's focus" if is_this_week else "removed from this week's focus")
+        if view_tab is not None and view_tab in ("sprint", "backlog"):
+            updates["view_tab"] = view_tab
+            changes.append("moved to sprint (this week)" if view_tab == "sprint" else "moved to backlog")
         if estimated_duration_minutes is not None and estimated_duration_minutes > 0:
             updates["estimated_duration_minutes"] = estimated_duration_minutes
             changes.append(f"estimated time → {estimated_duration_minutes} min")
@@ -430,7 +430,7 @@ async def schedule_loop_impl(ctx: ToolContext, task_title: str, scheduled_time: 
         except ValueError:
             display = scheduled_time
         response = await _run(lambda: sb.table("loops").update({
-            "scheduled_time": scheduled_time, "is_this_week": True, "updated_at": datetime.now().isoformat()
+            "scheduled_time": scheduled_time, "view_tab": "sprint", "updated_at": datetime.now().isoformat()
         }).eq("user_id", uid).ilike("title", f"%{safe_task_title}%").execute())
         if response.data:
             return f"Got it! '{task_title}' is scheduled for {display} and added to this week's focus."

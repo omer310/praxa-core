@@ -34,10 +34,36 @@ ToolExecutor = Callable[[ToolContext, str, dict], Awaitable[str]]
 # ---------------------------------------------------------------------------
 
 CORE_TOOLS = [
+    # --- Tasks ---
     {"type": "function", "function": {
         "name": "get_tasks",
         "description": "List the user's active tasks. view: 'sprint' (this week), 'backlog', or omit for all.",
         "parameters": {"type": "object", "properties": {"view": {"type": "string", "enum": ["sprint", "backlog", "all"]}}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_sprint_tasks",
+        "description": "Get all tasks scheduled for this week (sprint view).",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_backlog_tasks",
+        "description": "Get all tasks in the backlog — not scheduled for this week.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_high_priority_tasks",
+        "description": "Get all high-priority tasks regardless of view tab.",
+        "parameters": {"type": "object", "properties": {}},
+    }},
+    {"type": "function", "function": {
+        "name": "search_tasks",
+        "description": "Search tasks by title keyword.",
+        "parameters": {"type": "object", "properties": {"search_term": {"type": "string"}}, "required": ["search_term"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_upcoming_deadlines",
+        "description": "Get tasks with due dates within the next N days (default 7).",
+        "parameters": {"type": "object", "properties": {"days_ahead": {"type": "integer", "description": "Number of days to look ahead (default 7)"}}},
     }},
     {"type": "function", "function": {
         "name": "create_task",
@@ -53,20 +79,90 @@ CORE_TOOLS = [
         "description": "Mark a task complete by (partial) title.",
         "parameters": {"type": "object", "properties": {"task_title": {"type": "string"}}, "required": ["task_title"]},
     }},
+    # --- Calendar ---
     {"type": "function", "function": {
         "name": "get_todays_calendar",
         "description": "Get the user's calendar events for today.",
         "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {
+        "name": "get_upcoming_events",
+        "description": "Get upcoming calendar events for the next N days (default 14).",
+        "parameters": {"type": "object", "properties": {"days_ahead": {"type": "integer", "description": "Days to look ahead (default 14)"}}},
+    }},
+    {"type": "function", "function": {
+        "name": "get_events_for_day",
+        "description": "Get calendar events for a specific day. Accepts natural language like 'tomorrow', 'Monday', or 'April 19'.",
+        "parameters": {"type": "object", "properties": {"day": {"type": "string"}}, "required": ["day"]},
+    }},
+    {"type": "function", "function": {
+        "name": "check_free_time",
+        "description": "Check free time slots on a specific date (8am–8pm working hours).",
+        "parameters": {"type": "object", "properties": {"date": {"type": "string", "description": "YYYY-MM-DD or natural language date"}}, "required": ["date"]},
+    }},
+    {"type": "function", "function": {
+        "name": "reschedule_calendar_event",
+        "description": "Reschedule a calendar event to a new date/time. Queued for user approval.",
+        "parameters": {"type": "object", "properties": {
+            "event_name": {"type": "string"}, "new_date_time": {"type": "string", "description": "ISO datetime or natural language"},
+        }, "required": ["event_name", "new_date_time"]},
+    }},
+    # --- Email ---
+    {"type": "function", "function": {
         "name": "get_emails_needing_response",
         "description": "List unread emails from real people that may need a reply.",
         "parameters": {"type": "object", "properties": {}},
     }},
     {"type": "function", "function": {
+        "name": "get_email_body",
+        "description": "Read the full body of a specific email by number from the last listing, sender name, subject keyword, or raw ID.",
+        "parameters": {"type": "object", "properties": {"email_ref": {"type": "string"}}, "required": ["email_ref"]},
+    }},
+    {"type": "function", "function": {
+        "name": "search_emails",
+        "description": "Search emails by sender name, email address, or subject keyword.",
+        "parameters": {"type": "object", "properties": {"search_term": {"type": "string"}}, "required": ["search_term"]},
+    }},
+    {"type": "function", "function": {
+        "name": "reply_to_email",
+        "description": "Queue a reply to an email for user approval. Use after reading the email body.",
+        "parameters": {"type": "object", "properties": {
+            "email_id": {"type": "string"}, "reply_body": {"type": "string"},
+        }, "required": ["email_id", "reply_body"]},
+    }},
+    # --- Integrations ---
+    {"type": "function", "function": {
         "name": "search_notion",
         "description": "Search the user's connected Notion workspace for pages matching a query.",
         "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+    }},
+    {"type": "function", "function": {
+        "name": "get_slack_unread",
+        "description": "Get recent unread Slack messages from the user's connected workspace.",
+        "parameters": {"type": "object", "properties": {"limit": {"type": "integer", "description": "Max messages to return (default 15)"}}},
+    }},
+    {"type": "function", "function": {
+        "name": "send_slack_message",
+        "description": "Queue a Slack message to a channel or DM for user approval.",
+        "parameters": {"type": "object", "properties": {
+            "channel": {"type": "string", "description": "Channel name (e.g. 'general') or user ID"},
+            "message": {"type": "string"},
+        }, "required": ["channel", "message"]},
+    }},
+    {"type": "function", "function": {
+        "name": "create_notion_page",
+        "description": "Queue creation of a new Notion page for user approval.",
+        "parameters": {"type": "object", "properties": {
+            "title": {"type": "string"}, "content": {"type": "string"},
+            "parent_page_id": {"type": "string", "description": "Optional parent page ID"},
+        }, "required": ["title", "content"]},
+    }},
+    {"type": "function", "function": {
+        "name": "update_notion_page",
+        "description": "Queue an update to an existing Notion page for user approval.",
+        "parameters": {"type": "object", "properties": {
+            "page_id": {"type": "string"}, "new_title": {"type": "string"}, "append_text": {"type": "string"},
+        }, "required": ["page_id"]},
     }},
 ]
 
@@ -76,6 +172,7 @@ async def execute_core_tool(ctx: ToolContext, name: str, args: dict) -> Optional
     executor can handle its own extra tools)."""
     from .tools import tasks as _tasks, calendar as _calendar, email as _email, integrations as _integrations
 
+    # --- Tasks ---
     if name == "get_tasks":
         view = args.get("view", "all")
         if view == "sprint":
@@ -83,6 +180,16 @@ async def execute_core_tool(ctx: ToolContext, name: str, args: dict) -> Optional
         if view == "backlog":
             return await _tasks.get_backlog_tasks_impl(ctx)
         return await _tasks.get_all_tasks_impl(ctx)
+    if name == "get_sprint_tasks":
+        return await _tasks.get_sprint_tasks_impl(ctx)
+    if name == "get_backlog_tasks":
+        return await _tasks.get_backlog_tasks_impl(ctx)
+    if name == "get_high_priority_tasks":
+        return await _tasks.get_high_priority_tasks_impl(ctx)
+    if name == "search_tasks":
+        return await _tasks.search_tasks_impl(ctx, args.get("search_term", ""))
+    if name == "get_upcoming_deadlines":
+        return await _tasks.get_upcoming_deadlines_impl(ctx, args.get("days_ahead", 7))
     if name == "create_task":
         return await _tasks.create_task_impl(
             ctx, args.get("title", ""), args.get("bucket_name", ""),
@@ -90,12 +197,37 @@ async def execute_core_tool(ctx: ToolContext, name: str, args: dict) -> Optional
         )
     if name == "complete_task":
         return await _tasks.complete_task_impl(ctx, args.get("task_title", ""))
+    # --- Calendar ---
     if name == "get_todays_calendar":
         return await _calendar.get_todays_events_impl(ctx)
+    if name == "get_upcoming_events":
+        return await _calendar.get_upcoming_events_impl(ctx, args.get("days_ahead", 14))
+    if name == "get_events_for_day":
+        return await _calendar.get_events_for_day_impl(ctx, args.get("day", "today"))
+    if name == "check_free_time":
+        return await _calendar.check_free_time_impl(ctx, args.get("date", ""))
+    if name == "reschedule_calendar_event":
+        return await _calendar.reschedule_calendar_event_impl(ctx, args.get("event_name", ""), args.get("new_date_time", ""))
+    # --- Email ---
     if name == "get_emails_needing_response":
         return await _email.get_emails_needing_response_impl(ctx)
+    if name == "get_email_body":
+        return await _email.get_email_body_impl(ctx, args.get("email_ref", ""))
+    if name == "search_emails":
+        return await _email.search_emails_impl(ctx, args.get("search_term", ""))
+    if name == "reply_to_email":
+        return await _email.reply_to_email_impl(ctx, args.get("email_id", ""), args.get("reply_body", ""))
+    # --- Integrations ---
     if name == "search_notion":
         return await _integrations.search_notion_impl(ctx, args.get("query", ""))
+    if name == "get_slack_unread":
+        return await _integrations.get_slack_unread_impl(ctx, args.get("limit", 15))
+    if name == "send_slack_message":
+        return await _integrations.send_slack_message_impl(ctx, args.get("channel", ""), args.get("message", ""))
+    if name == "create_notion_page":
+        return await _integrations.create_notion_page_impl(ctx, args.get("title", ""), args.get("content", ""), args.get("parent_page_id", ""))
+    if name == "update_notion_page":
+        return await _integrations.update_notion_page_impl(ctx, args.get("page_id", ""), args.get("new_title", ""), args.get("append_text", ""))
     return None
 
 
