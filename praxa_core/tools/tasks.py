@@ -418,6 +418,126 @@ async def rename_task_impl(ctx: ToolContext, current_title: str, new_title: str)
         return "Sorry, I couldn't rename the task"
 
 
+async def _find_loop_by_title(ctx: ToolContext, task_title: str) -> dict | None:
+    """Resolve a loop (task) for the current user by a partial title match."""
+    sb, uid = ctx.supabase, ctx.uid
+    safe_title = sanitize_sql_like_pattern(task_title)
+    resp = await _run(lambda: sb.table("loops").select("id, title").eq(
+        "user_id", uid
+    ).ilike("title", f"%{safe_title}%").limit(1).execute())
+    return resp.data[0] if resp.data else None
+
+
+async def list_subtasks_impl(ctx: ToolContext, task_title: str) -> str:
+    """List the subtasks (steps) of a task."""
+    if not ctx.uid:
+        return _not_signed_in()
+    try:
+        sb = ctx.supabase
+        loop = await _find_loop_by_title(ctx, task_title)
+        if not loop:
+            return f"I couldn't find a task matching '{task_title}'."
+        resp = await _run(lambda: sb.table("subtasks").select(
+            "title, done, position"
+        ).eq("loop_id", loop["id"]).order("position").order("created_at").execute())
+        rows = resp.data or []
+        if not rows:
+            return f"'{loop['title']}' doesn't have any subtasks yet. Want me to break it into steps?"
+        done = sum(1 for r in rows if r.get("done"))
+        lines = [f"{'✓' if r.get('done') else '○'} {r['title']}" for r in rows]
+        return f"'{loop['title']}' has {done}/{len(rows)} steps done:\n" + "\n".join(lines)
+    except Exception as e:
+        logger.error(f"Error listing subtasks: {e}")
+        return "Sorry, I couldn't fetch those subtasks."
+
+
+async def break_down_task_impl(ctx: ToolContext, task_title: str, subtasks: list[str]) -> str:
+    """Break a task into subtasks. Only call this once the user has agreed to the
+    breakdown you proposed in conversation — never restructure their tasks silently."""
+    if not ctx.uid:
+        return _not_signed_in()
+    sb, uid = ctx.supabase, ctx.uid
+    if not sb:
+        return "Sorry, I couldn't break that down — the assistant isn't fully connected to your data yet."
+    try:
+        loop = await _find_loop_by_title(ctx, task_title)
+        if not loop:
+            return f"I couldn't find a task matching '{task_title}'."
+
+        clean = [t.strip() for t in (subtasks or []) if t and t.strip()]
+        if not clean:
+            return "Tell me the steps you'd like and I'll add them."
+
+        existing = await _run(lambda: sb.table("subtasks").select("position").eq("loop_id", loop["id"]).execute())
+        start = (max((s.get("position", 0) for s in existing.data), default=-1) + 1) if existing.data else 0
+        now = datetime.now().isoformat()
+        rows = [
+            {
+                "loop_id": loop["id"], "user_id": uid, "title": title, "done": False,
+                "position": start + i, "created_by": "agent", "created_at": now, "updated_at": now,
+            }
+            for i, title in enumerate(clean)
+        ]
+        await _run(lambda: sb.table("subtasks").insert(rows).execute())
+        return f"Done — I broke '{loop['title']}' into {len(rows)} steps: " + "; ".join(clean)
+    except Exception as e:
+        logger.error(f"Error breaking down task: {e}", exc_info=True)
+        err_s = str(e).lower()
+        if "row-level security" in err_s or "42501" in str(e):
+            return "Sorry, I couldn't save those steps due to a permissions issue."
+        return "Sorry, I couldn't break that task down."
+
+
+async def add_subtask_impl(ctx: ToolContext, task_title: str, subtask_title: str) -> str:
+    """Add a single subtask (step) to a task."""
+    if not ctx.uid:
+        return _not_signed_in()
+    sb, uid = ctx.supabase, ctx.uid
+    try:
+        loop = await _find_loop_by_title(ctx, task_title)
+        if not loop:
+            return f"I couldn't find a task matching '{task_title}'."
+        if not subtask_title or not subtask_title.strip():
+            return "What should the step be?"
+
+        existing = await _run(lambda: sb.table("subtasks").select("position").eq("loop_id", loop["id"]).execute())
+        position = (max((s.get("position", 0) for s in existing.data), default=-1) + 1) if existing.data else 0
+        now = datetime.now().isoformat()
+        await _run(lambda: sb.table("subtasks").insert({
+            "loop_id": loop["id"], "user_id": uid, "title": subtask_title.strip(), "done": False,
+            "position": position, "created_by": "agent", "created_at": now, "updated_at": now,
+        }).execute())
+        return f"Added '{subtask_title.strip()}' to '{loop['title']}'."
+    except Exception as e:
+        logger.error(f"Error adding subtask: {e}")
+        return "Sorry, I couldn't add that step."
+
+
+async def complete_subtask_impl(ctx: ToolContext, task_title: str, subtask_title: str) -> str:
+    """Mark a subtask (step) as done by partial title within a task."""
+    if not ctx.uid:
+        return _not_signed_in()
+    sb = ctx.supabase
+    try:
+        loop = await _find_loop_by_title(ctx, task_title)
+        if not loop:
+            return f"I couldn't find a task matching '{task_title}'."
+        safe_sub = sanitize_sql_like_pattern(subtask_title)
+        found = await _run(lambda: sb.table("subtasks").select("id, title").eq(
+            "loop_id", loop["id"]
+        ).ilike("title", f"%{safe_sub}%").limit(1).execute())
+        if not found.data:
+            return f"I couldn't find a step matching '{subtask_title}' on '{loop['title']}'."
+        sub = found.data[0]
+        await _run(lambda: sb.table("subtasks").update({
+            "done": True, "completed_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat(),
+        }).eq("id", sub["id"]).execute())
+        return f"Checked off '{sub['title']}' on '{loop['title']}'."
+    except Exception as e:
+        logger.error(f"Error completing subtask: {e}")
+        return "Sorry, I couldn't check off that step."
+
+
 async def schedule_loop_impl(ctx: ToolContext, task_title: str, scheduled_time: str) -> str:
     if not ctx.uid:
         return _not_signed_in()

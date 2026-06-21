@@ -79,6 +79,34 @@ CORE_TOOLS = [
         "description": "Mark a task complete by (partial) title.",
         "parameters": {"type": "object", "properties": {"task_title": {"type": "string"}}, "required": ["task_title"]},
     }},
+    # --- Subtasks ---
+    {"type": "function", "function": {
+        "name": "list_subtasks",
+        "description": "List the subtasks (steps) of a task by (partial) title.",
+        "parameters": {"type": "object", "properties": {"task_title": {"type": "string"}}, "required": ["task_title"]},
+    }},
+    {"type": "function", "function": {
+        "name": "break_down_task",
+        "description": "Break a task into subtasks/steps. ONLY call this after the user has agreed to a breakdown you proposed in conversation. Do not restructure tasks silently.",
+        "parameters": {"type": "object", "properties": {
+            "task_title": {"type": "string", "description": "The task to break down (partial title)"},
+            "subtasks": {"type": "array", "items": {"type": "string"}, "description": "The ordered list of step titles the user agreed to"},
+        }, "required": ["task_title", "subtasks"]},
+    }},
+    {"type": "function", "function": {
+        "name": "add_subtask",
+        "description": "Add a single subtask (step) to an existing task.",
+        "parameters": {"type": "object", "properties": {
+            "task_title": {"type": "string"}, "subtask_title": {"type": "string"},
+        }, "required": ["task_title", "subtask_title"]},
+    }},
+    {"type": "function", "function": {
+        "name": "complete_subtask",
+        "description": "Mark a subtask (step) as done by partial title within a task.",
+        "parameters": {"type": "object", "properties": {
+            "task_title": {"type": "string"}, "subtask_title": {"type": "string"},
+        }, "required": ["task_title", "subtask_title"]},
+    }},
     # --- Calendar ---
     {"type": "function", "function": {
         "name": "get_todays_calendar",
@@ -197,6 +225,15 @@ async def execute_core_tool(ctx: ToolContext, name: str, args: dict) -> Optional
         )
     if name == "complete_task":
         return await _tasks.complete_task_impl(ctx, args.get("task_title", ""))
+    # --- Subtasks ---
+    if name == "list_subtasks":
+        return await _tasks.list_subtasks_impl(ctx, args.get("task_title", ""))
+    if name == "break_down_task":
+        return await _tasks.break_down_task_impl(ctx, args.get("task_title", ""), args.get("subtasks", []))
+    if name == "add_subtask":
+        return await _tasks.add_subtask_impl(ctx, args.get("task_title", ""), args.get("subtask_title", ""))
+    if name == "complete_subtask":
+        return await _tasks.complete_subtask_impl(ctx, args.get("task_title", ""), args.get("subtask_title", ""))
     # --- Calendar ---
     if name == "get_todays_calendar":
         return await _calendar.get_todays_events_impl(ctx)
